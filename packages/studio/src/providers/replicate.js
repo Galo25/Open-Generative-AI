@@ -1,6 +1,6 @@
 import { getLipSyncModelById } from '../models.js';
 
-const BASE_URL = 'https://api.replicate.com';
+const BASE_URL = '/api/replicate';
 
 // SadTalker: portrait image + audio → talking video
 const SADTALKER_MODEL = 'zsxkib/sadtalker';

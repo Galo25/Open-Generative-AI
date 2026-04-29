@@ -1,6 +1,6 @@
 import { getModelById } from '../models.js';
 
-const BASE_URL = 'https://api.replicate.com';
+const BASE_URL = '/api/replicate';
 
 // SDXL expects explicit width/height, not aspect_ratio string
 const AR_TO_SDXL_SIZE = {
