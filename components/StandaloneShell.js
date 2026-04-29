@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ImageStudio, VideoStudio, LipSyncStudio, CinemaStudio, MarketingStudio, WorkflowStudio, AgentStudio, AppsStudio, SettingsStudio, getUserBalance } from 'studio';
 import axios from 'axios';
-import ApiKeyModal from './ApiKeyModal';
 
 const TABS = [
   { id: 'image',   label: 'Image Studio' },
@@ -56,7 +55,6 @@ export default function StandaloneShell() {
   const [activeTab, setActiveTab] = useState(getInitialTab());
   
   const [balance, setBalance] = useState(null);
-  const [showSettings, setShowSettings] = useState(false);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const [hasMounted, setHasMounted] = useState(false);
 
@@ -120,24 +118,27 @@ export default function StandaloneShell() {
     if (stored) {
       setApiKey(stored);
       fetchBalance(stored);
-      // Sync cookie immediately on mount to establish identity for background requests
       document.cookie = `muapi_key=${stored}; path=/; max-age=31536000; SameSite=Lax`;
+    } else {
+      // No Muapi key — send the user to Settings unless the URL specifies a tab
+      const firstSegment = (params?.slug || [])[0];
+      if (!firstSegment || firstSegment === 'image') {
+        setActiveTab('settings');
+      }
     }
-  }, [fetchBalance]);
 
-  const handleKeySave = useCallback((key) => {
-    localStorage.setItem(STORAGE_KEY, key);
-    setApiKey(key);
-    fetchBalance(key);
-    document.cookie = `muapi_key=${key}; path=/; max-age=31536000; SameSite=Lax`;
+    // Sync apiKey state when SettingsStudio saves the Muapi key in the same tab
+    const handleMuapiKeySaved = (e) => {
+      const key = e.detail?.key;
+      if (key) {
+        setApiKey(key);
+        fetchBalance(key);
+        document.cookie = `muapi_key=${key}; path=/; max-age=31536000; SameSite=Lax`;
+      }
+    };
+    window.addEventListener('muapi-key-saved', handleMuapiKeySaved);
+    return () => window.removeEventListener('muapi-key-saved', handleMuapiKeySaved);
   }, [fetchBalance]);
-
-  const handleKeyChange = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
-    setApiKey(null);
-    setBalance(null);
-    document.cookie = "muapi_key=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-  }, []);
 
   // Inject API key into all outgoing Axios requests (prop-based approach)
   // We use an interceptor to be selective and NOT send the key to external domains like S3
@@ -214,10 +215,6 @@ export default function StandaloneShell() {
     </div>
   );
 
-  if (!apiKey) {
-    return <ApiKeyModal onSave={handleKeySave} />;
-  }
-
   return (
     <div 
       className="h-screen bg-[#030303] flex flex-col overflow-hidden text-white relative"
@@ -288,9 +285,9 @@ export default function StandaloneShell() {
             </div>
 
             <button
-              onClick={() => setShowSettings(true)}
-              title="Settings — API key, local models, preferences"
-              className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-white/10 bg-white/5 text-[13px] font-bold text-white/80 hover:text-white hover:bg-white/10 hover:border-white/20 transition-colors"
+              onClick={() => handleTabChange('settings')}
+              title="Settings — API keys, provider toggle"
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md border text-[13px] font-bold transition-colors ${activeTab === 'settings' ? 'border-[#d9ff00]/40 bg-[#d9ff00]/10 text-[#d9ff00]' : 'border-white/10 bg-white/5 text-white/80 hover:text-white hover:bg-white/10 hover:border-white/20'}`}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="3" />
@@ -314,44 +311,6 @@ export default function StandaloneShell() {
         {activeTab === 'apps' && <AppsStudio apiKey={apiKey} />}
         {activeTab === 'settings' && <SettingsStudio />}
       </div>
-
-      {/* Settings Modal */}
-      {showSettings && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in-up">
-          <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-8 w-full max-w-sm shadow-2xl">
-            <h2 className="text-white font-bold text-lg mb-2">Settings</h2>
-            <p className="text-white/40 text-[13px] mb-8">
-              Manage your AI studio preferences and authentication.
-            </p>
-            
-            <div className="space-y-4 mb-8">
-              <div className="bg-white/5 border border-white/[0.03] rounded-md p-4">
-                <label className="block text-xs font-bold text-white/30 mb-2">
-                   Active API Key
-                </label>
-                <div className="text-[13px] font-mono text-white/80">
-                  {apiKey.slice(0, 8)}••••••••••••••••
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={handleKeyChange}
-                className="flex-1 h-10 rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 text-xs font-semibold transition-all"
-              >
-                Change Key
-              </button>
-              <button
-                onClick={() => setShowSettings(false)}
-                className="flex-1 h-10 rounded-md bg-white/5 text-white/80 hover:bg-white/10 text-xs font-semibold transition-all border border-white/5"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

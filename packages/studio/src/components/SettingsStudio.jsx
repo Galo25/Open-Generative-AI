@@ -8,7 +8,7 @@ import { getActiveProvider, setActiveProvider } from "../providers/router.js";
 
 const STATUS = { UNTESTED: "untested", OK: "ok", ERROR: "error", TESTING: "testing" };
 
-function ProviderCard({ name, icon, storageKey, placeholder, helpText, helpUrl, onTest }) {
+function ProviderCard({ name, icon, storageKey, placeholder, helpText, helpUrl, onTest, onSave }) {
     const [value, setValue] = useState('');
     const [show, setShow] = useState(false);
     const [status, setStatus] = useState(STATUS.UNTESTED);
@@ -20,8 +20,10 @@ function ProviderCard({ name, icon, storageKey, placeholder, helpText, helpUrl, 
     }, [storageKey]);
 
     const handleSave = () => {
-        localStorage.setItem(storageKey, value.trim());
+        const trimmed = value.trim();
+        localStorage.setItem(storageKey, trimmed);
         setStatus(STATUS.UNTESTED);
+        if (onSave) onSave(trimmed);
     };
 
     const handleTest = async () => {
@@ -155,6 +157,7 @@ export default function SettingsStudio() {
                         helpText="Get your key at muapi.ai"
                         helpUrl="https://muapi.ai"
                         onTest={muapiTest}
+                        onSave={(key) => window.dispatchEvent(new CustomEvent('muapi-key-saved', { detail: { key } }))}
                     />
                     <ProviderCard
                         name="Replicate"
