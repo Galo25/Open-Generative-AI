@@ -37,7 +37,9 @@ async function pollForResult(predictionId, token, { signal, onPollStatus } = {})
                 return { ...data, url };
             }
             if (status === 'failed' || status === 'canceled') {
-                throw new Error(`Generation failed: ${data.error || 'Unknown error'}`);
+                const logTail = data.logs ? data.logs.trim().split('\n').slice(-3).join(' | ') : '';
+                const msg = data.error || logTail || 'Unknown error';
+                throw new Error(`Generation failed: ${msg}`);
             }
         } catch (error) {
             if (error.message === 'Generation cancelled.' || error.name === 'AbortError') throw new Error('Generation cancelled.');
@@ -47,8 +49,16 @@ async function pollForResult(predictionId, token, { signal, onPollStatus } = {})
     throw new Error('Generation timed out after polling.');
 }
 
+function parseReplicateError(status, text) {
+    try {
+        const j = JSON.parse(text);
+        return j.detail || j.error || text.slice(0, 150);
+    } catch {
+        return text.slice(0, 150);
+    }
+}
+
 async function createPrediction(token, modelSlug, input, signal) {
-    // Use the models/predictions endpoint (no version hash needed — Replicate resolves latest)
     const [owner, name] = modelSlug.split('/');
     const url = `${BASE_URL}/v1/models/${owner}/${name}/predictions`;
     const response = await fetch(url, {
@@ -59,7 +69,9 @@ async function createPrediction(token, modelSlug, input, signal) {
     });
     if (!response.ok) {
         const errText = await response.text();
-        throw new Error(`Replicate submit failed: ${response.status} - ${errText.slice(0, 150)}`);
+        if (response.status === 401) throw new Error('Replicate token is invalid. Check it in Settings.');
+        if (response.status === 404) throw new Error(`Replicate model not found: ${modelSlug}`);
+        throw new Error(`Replicate: ${parseReplicateError(response.status, errText)}`);
     }
     return response.json();
 }
@@ -112,6 +124,7 @@ export async function testConnection(token) {
     const response = await fetch(`${BASE_URL}/v1/account`, {
         headers: { 'Authorization': `Token ${token}` },
     });
+    if (response.status === 401) throw new Error('Invalid token — check your Replicate API token.');
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return true;
 }

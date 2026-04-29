@@ -184,15 +184,15 @@ export default function SettingsStudio() {
                     <label className="text-xs font-bold text-white/40 uppercase tracking-widest">Studio Provider Readiness</label>
                     <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] divide-y divide-white/[0.04]">
                         {[
-                            { icon: '🎙', label: 'Lip Sync', replicate: true },
-                            { icon: '🖼', label: 'Image Studio', replicate: false },
+                            { icon: '🎙', label: 'Lip Sync', replicate: true, note: 'SadTalker · Wav2Lip' },
+                            { icon: '🖼', label: 'Image Studio', replicate: true, note: 'Flux Dev/Schnell/Pro · SDXL' },
                             { icon: '🎬', label: 'Video Studio', replicate: false },
                             { icon: '🎬', label: 'Cinema Studio', replicate: false },
-                        ].map(({ icon, label, replicate }) => (
+                        ].map(({ icon, label, replicate, note }) => (
                             <div key={label} className="flex items-center justify-between px-4 py-3">
                                 <span className="text-sm text-white/60">{icon} {label}</span>
                                 {replicate
-                                    ? <span className="text-xs text-green-400 font-bold">✓ Replicate ready</span>
+                                    ? <span className="text-xs text-green-400 font-bold" title={note}>✓ Replicate ready</span>
                                     : <span className="text-xs text-white/20">— Replicate coming soon</span>
                                 }
                             </div>

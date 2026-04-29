@@ -299,6 +299,19 @@ export default function StandaloneShell() {
         </header>
       )}
 
+      {/* No Muapi key banner — shown on studios that need it */}
+      {!apiKey && !['settings', 'lipsync'].includes(activeTab) && (
+        <div className="flex-shrink-0 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 flex items-center justify-between gap-4">
+          <span className="text-xs text-amber-400">⚠ Muapi API key not configured — this studio requires it to generate.</span>
+          <button
+            onClick={() => handleTabChange('settings')}
+            className="text-xs font-bold text-[#d9ff00] hover:underline whitespace-nowrap"
+          >
+            Go to Settings →
+          </button>
+        </div>
+      )}
+
       {/* Studio Content */}
       <div className="flex-1 min-h-0 relative overflow-hidden">
         {activeTab === 'image'   && <ImageStudio   apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />}

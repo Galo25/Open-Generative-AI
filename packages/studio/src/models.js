@@ -39,6 +39,7 @@ export const t2iModels = [
     "id": "flux-dev",
     "name": "Flux Dev",
     "endpoint": "flux-dev-image",
+    "replicateId": "black-forest-labs/flux-dev",
     "inputs": {
       "prompt": {
         "examples": [
@@ -165,6 +166,7 @@ export const t2iModels = [
   {
     "id": "flux-kontext-dev-t2i",
     "name": "Flux Kontext Dev T2I",
+    "replicateId": "black-forest-labs/flux-kontext-dev",
     "inputs": {
       "prompt": {
         "examples": [
@@ -416,6 +418,7 @@ export const t2iModels = [
   {
     "id": "flux-kontext-pro-t2i",
     "name": "Flux Kontext Pro T2I",
+    "replicateId": "black-forest-labs/flux-kontext-pro",
     "inputs": {
       "prompt": {
         "examples": [
@@ -447,6 +450,7 @@ export const t2iModels = [
   {
     "id": "flux-kontext-max-t2i",
     "name": "Flux Kontext Max T2I",
+    "replicateId": "black-forest-labs/flux-kontext-max",
     "inputs": {
       "prompt": {
         "examples": [
@@ -595,6 +599,7 @@ export const t2iModels = [
     "id": "flux-schnell",
     "name": "Flux Schnell",
     "endpoint": "flux-schnell-image",
+    "replicateId": "black-forest-labs/flux-schnell",
     "inputs": {
       "prompt": {
         "examples": [
@@ -925,6 +930,7 @@ export const t2iModels = [
   {
     "id": "sdxl-image",
     "name": "Sdxl Image",
+    "replicateId": "stability-ai/sdxl",
     "inputs": {
       "prompt": {
         "examples": [
@@ -1581,6 +1587,7 @@ export const t2iModels = [
   {
     "id": "flux-2-dev",
     "name": "Flux 2 Dev",
+    "replicateId": "black-forest-labs/flux-dev",
     "inputs": {
       "prompt": {
         "examples": [
@@ -1658,6 +1665,7 @@ export const t2iModels = [
   {
     "id": "flux-2-pro",
     "name": "Flux 2 Pro",
+    "replicateId": "black-forest-labs/flux-pro",
     "inputs": {
       "prompt": {
         "examples": [
