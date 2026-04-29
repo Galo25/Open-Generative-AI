@@ -136,22 +136,6 @@ export async function generateMarketingStudioAd(apiKey, params) {
     return submitAndPoll(endpoint, payload, apiKey, params.onRequestId, 900);
 }
 
-export async function processLipSync(apiKey, params) {
-    const modelInfo = getLipSyncModelById(params.model);
-    const endpoint = modelInfo?.endpoint || params.model;
-    const payload = {};
-    if (params.audio_url) payload.audio_url = params.audio_url;
-    if (params.image_url) payload.image_url = params.image_url;
-    if (params.video_url) payload.video_url = params.video_url;
-    if (params.prompt) payload.prompt = params.prompt;
-    if (params.resolution) payload.resolution = params.resolution;
-    if (params.seed !== undefined && params.seed !== -1) payload.seed = params.seed;
-    return submitAndPoll(endpoint, payload, apiKey, params.onRequestId, 900, {
-        signal: params.signal,
-        onPollStatus: params.onPollStatus,
-    });
-}
-
 export function uploadFile(apiKey, file, onProgress) {
     return new Promise((resolve, reject) => {
         const url = `${BASE_URL}/api/v1/upload_file`;
