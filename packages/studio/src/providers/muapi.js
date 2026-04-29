@@ -71,7 +71,7 @@ export async function processLipSync(apiKey, params) {
 }
 
 export async function testConnection(apiKey) {
-    const response = await fetch(`${BASE_URL}/api/v1/user/balance`, {
+    const response = await fetch(`${BASE_URL}/api/v1/account/balance`, {
         headers: { 'x-api-key': apiKey },
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
