@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { processLipSync, uploadFile } from "../muapi.js";
+import { processLipSync } from "../providers/router.js";
+import { uploadFile } from "../muapi.js";
+import { getVoices as elGetVoices, generateSpeech as elGenerateSpeech } from "../providers/elevenlabs.js";
 import {
   lipsyncModels,
   imageLipSyncModels,
@@ -376,6 +378,14 @@ export default function LipSyncStudio({
   const genTimerRef = useRef(null);
   const abortControllerRef = useRef(null);
 
+  // ── ElevenLabs panel ────────────────────────────────────────────────────
+  const [showElevenLabs, setShowElevenLabs] = useState(false);
+  const [elVoices, setElVoices] = useState([]);
+  const [elSelectedVoice, setElSelectedVoice] = useState('');
+  const [elScript, setElScript] = useState('');
+  const [elGenerating, setElGenerating] = useState(false);
+  const [elError, setElError] = useState(null);
+
   // ── History ─────────────────────────────────────────────────────────────
   // If historyItems prop is provided, use it; otherwise use internal state.
   const [internalHistory, setInternalHistory] = useState([]);
@@ -664,7 +674,7 @@ export default function LipSyncStudio({
       if (showResolution) lipsyncParams.resolution = selectedResolution;
       if (selectedModel?.hasSeed) lipsyncParams.seed = -1;
 
-      const res = await processLipSync(apiKey, lipsyncParams);
+      const res = await processLipSync(lipsyncParams);
 
       if (!res?.url) throw new Error("No video URL returned by API");
 
@@ -709,6 +719,42 @@ export default function LipSyncStudio({
   // ── Cancel generation ───────────────────────────────────────────────────
   const handleCancel = () => {
     abortControllerRef.current?.abort();
+  };
+
+  // ── ElevenLabs handlers ──────────────────────────────────────────────────
+  const handleElevenLabsOpen = async () => {
+    const opening = !showElevenLabs;
+    setShowElevenLabs(opening);
+    if (opening) {
+      const elKey = localStorage.getItem('elevenlabs_key');
+      if (!elKey) { setElError('Configure ElevenLabs in Settings first.'); return; }
+      setElError(null);
+      try {
+        const voices = await elGetVoices(elKey);
+        setElVoices(voices);
+        if (voices.length > 0) setElSelectedVoice(voices[0].voice_id);
+      } catch (e) {
+        setElError(e.message);
+      }
+    }
+  };
+
+  const handleElevenLabsGenerate = async () => {
+    const elKey = localStorage.getItem('elevenlabs_key');
+    if (!elKey) { setElError('Configure ElevenLabs in Settings first.'); return; }
+    if (!elScript.trim()) { setElError('Enter a script first.'); return; }
+    setElGenerating(true);
+    setElError(null);
+    try {
+      const blob = await elGenerateSpeech(elKey, { voiceId: elSelectedVoice, text: elScript });
+      const file = new File([blob], 'elevenlabs-audio.mp3', { type: 'audio/mpeg' });
+      await handleAudioPick(file);
+      setShowElevenLabs(false);
+    } catch (e) {
+      setElError(e.message);
+    } finally {
+      setElGenerating(false);
+    }
   };
 
   // ── Reset to input view ─────────────────────────────────────────────────
@@ -973,7 +1019,58 @@ export default function LipSyncStudio({
                 isVideo={false}
                 apiKey={apiKey}
               />
+
+              {/* ElevenLabs AI audio button */}
+              <button
+                type="button"
+                onClick={handleElevenLabsOpen}
+                title="Generate audio with ElevenLabs"
+                className={`flex-shrink-0 w-10 h-10 rounded-full border transition-all flex flex-col items-center justify-center gap-0.5 group ${showElevenLabs ? 'border-[#d9ff00]/60 bg-[#d9ff00]/10 text-[#d9ff00]' : 'border-white/[0.03] bg-white/[0.03] hover:bg-white/[0.06] hover:border-[#d9ff00]/40 text-white/40 hover:text-[#d9ff00]'}`}
+              >
+                <span className="text-[10px] font-black leading-none">AI</span>
+                <span className="text-[7px] leading-none">AUDIO</span>
+              </button>
             </div>
+
+            {/* ElevenLabs panel */}
+            {showElevenLabs && (
+              <div className="mx-1 p-3 rounded-lg bg-white/[0.03] border border-white/[0.05] flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#d9ff00]">🎙 Generate Audio — ElevenLabs</span>
+                  <button type="button" onClick={() => setShowElevenLabs(false)} className="text-white/30 hover:text-white text-xs">✕</button>
+                </div>
+                {elError && <p className="text-xs text-red-400">{elError}</p>}
+                {elVoices.length > 0 && (
+                  <select
+                    value={elSelectedVoice}
+                    onChange={e => setElSelectedVoice(e.target.value)}
+                    className="w-full bg-white/[0.05] border border-white/10 rounded-md px-2 py-1.5 text-xs text-white focus:outline-none focus:border-[#d9ff00]/40"
+                  >
+                    {elVoices.map(v => (
+                      <option key={v.voice_id} value={v.voice_id}>{v.name}</option>
+                    ))}
+                  </select>
+                )}
+                <textarea
+                  value={elScript}
+                  onChange={e => setElScript(e.target.value.slice(0, 5000))}
+                  placeholder="Type your script here..."
+                  rows={3}
+                  className="w-full bg-white/[0.05] border border-white/10 rounded-md px-2 py-1.5 text-xs text-white placeholder:text-white/20 resize-none focus:outline-none focus:border-[#d9ff00]/40"
+                />
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-white/20">{elScript.length} / 5000</span>
+                  <button
+                    type="button"
+                    onClick={handleElevenLabsGenerate}
+                    disabled={elGenerating || !elScript.trim()}
+                    className="px-3 py-1.5 rounded-md bg-[#d9ff00] text-black text-xs font-bold hover:bg-[#e5ff33] transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  >
+                    {elGenerating ? <><span className="animate-spin">◌</span> Generating...</> : 'Generate Audio'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Prompt textarea */}
             {showPrompt && (
