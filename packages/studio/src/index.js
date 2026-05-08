@@ -9,4 +9,7 @@ export { default as WorkflowStudio } from './components/WorkflowStudio';
 export { default as AgentStudio } from './components/AgentStudio';
 export { default as AppsStudio } from './components/AppsStudio';
 export { default as SettingsStudio } from './components/SettingsStudio';
+export { default as CanvEditor } from './components/CanvEditor';
+export { default as V2VStudio } from './components/V2VStudio';
 export * from './muapi';
+export { getReplicateAccount } from './providers/replicate.js';

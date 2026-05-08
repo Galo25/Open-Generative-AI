@@ -3,6 +3,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { processLipSync } from "../providers/router.js";
 import { uploadFile } from "../muapi.js";
+import {
+  loadJobs, startJob, completeJob, failJob,
+  removeJob, clearAllJobs, assignJobToFolder, fmtDuration, fmtRelative,
+} from "./lipsync/jobHistory.js";
+import {
+  loadFolders, createFolder, renameFolder, deleteFolder,
+} from "./lipsync/folderHistory.js";
 import { getVoices as elGetVoices, generateSpeech as elGenerateSpeech } from "../providers/elevenlabs.js";
 import {
   lipsyncModels,
@@ -219,8 +226,17 @@ function Dropdown({ isOpen, items, selectedId, onSelect, onClose, anchorRef }) {
               : "text-white font-medium"
           }`}
         >
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <span>{item.name}</span>
+            {item.provider && (
+              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold leading-none ${
+                item.provider === 'Replicate'
+                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                  : 'bg-white/5 text-white/30 border border-white/10'
+              }`}>
+                {item.provider}
+              </span>
+            )}
             {item.maxDuration && (
               <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] font-bold text-white/40 leading-none">
                 Max {item.maxDuration}s
@@ -229,7 +245,7 @@ function Dropdown({ isOpen, items, selectedId, onSelect, onClose, anchorRef }) {
           </div>
           {item.description && (
             <div className="text-xs text-muted mt-0.5">
-              {item.description.slice(0, 60)}...
+              {item.description.slice(0, 70)}
             </div>
           )}
         </button>
@@ -365,6 +381,7 @@ export default function LipSyncStudio({
 
   // ── Prompt ──────────────────────────────────────────────────────────────
   const [prompt, setPrompt] = useState("");
+  const [showStyleHint, setShowStyleHint] = useState(false);
 
   // ── Generation / UI state ───────────────────────────────────────────────
   const [isGenerating, setIsGenerating] = useState(false);
@@ -391,6 +408,47 @@ export default function LipSyncStudio({
   const [internalHistory, setInternalHistory] = useState([]);
   const history = historyItems ?? internalHistory;
   const [activeHistoryIdx, setActiveHistoryIdx] = useState(0);
+
+  // ── Job history sidebar ─────────────────────────────────────────────────
+  const [jobs,           setJobs]           = useState([]);
+  const [folders,        setFolders]        = useState([]);
+  const [activeFolderId, setActiveFolderId] = useState(null); // null = "All"
+  const [renamingId,     setRenamingId]     = useState(null);
+  const [renameValue,    setRenameValue]    = useState('');
+  const [dragOverFolder, setDragOverFolder] = useState(null);
+  const currentJobRef = useRef(null);
+
+  // Load jobs + folders on mount
+  useEffect(() => {
+    setJobs(loadJobs());
+    setFolders(loadFolders());
+  }, []);
+
+  // ── Shared drop handler — accepts both jobId (sidebar) and entryUrl (gallery) ──
+  const handleFolderDrop = useCallback((e, targetFolderId) => {
+    e.preventDefault();
+    const jobId    = e.dataTransfer.getData('jobId');
+    const entryUrl = e.dataTransfer.getData('entryUrl');
+    if (jobId) {
+      setJobs(assignJobToFolder(jobId, targetFolderId));
+    } else if (entryUrl) {
+      // Find existing job record by output URL
+      let match = loadJobs().find(j => j.outputUrl === entryUrl);
+      if (!match) {
+        // Gallery entry predates job history — create a synthetic record so we
+        // can store its folderId in the same place as everything else.
+        const synthetic = startJob({
+          model: { id: 'legacy', name: 'Legacy' },
+          inputType: 'image', inputThumbnail: null,
+          audioName: '', prompt: null, resolution: null,
+        });
+        completeJob(synthetic.id, entryUrl);
+        match = loadJobs().find(j => j.outputUrl === entryUrl);
+      }
+      if (match) setJobs(assignJobToFolder(match.id, targetFolderId));
+    }
+    setDragOverFolder(null);
+  }, []);
 
   // ── Dropdown state ──────────────────────────────────────────────────────
   const [openDropdown, setOpenDropdown] = useState(null); // 'model' | 'resolution' | null
@@ -658,6 +716,18 @@ export default function LipSyncStudio({
     genTimerRef.current = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
     abortControllerRef.current = new AbortController();
 
+    // Record job start
+    const job = startJob({
+      model:          { id: selectedModelId, name: selectedModel?.name ?? selectedModelId },
+      inputType:      inputMode,
+      inputThumbnail: inputMode === 'image' ? imageUrl : videoUrl,
+      audioName,
+      prompt:         (showPrompt && prompt) ? prompt : null,
+      resolution:     showResolution ? selectedResolution : null,
+    });
+    currentJobRef.current = job.id;
+    setJobs(loadJobs());
+
     try {
       const lipsyncParams = {
         model: selectedModelId,
@@ -689,6 +759,12 @@ export default function LipSyncStudio({
 
       if (!historyItems) addToInternalHistory(entry);
 
+      // Complete the job record
+      if (currentJobRef.current) {
+        setJobs(completeJob(currentJobRef.current, res.url));
+        currentJobRef.current = null;
+      }
+
       setActiveResultUrl(res.url);
       setActiveHistoryIdx(0);
       setView("result");
@@ -703,8 +779,13 @@ export default function LipSyncStudio({
       }
     } catch (e) {
       console.error("[LipSyncStudio]", e);
-      setGenerateError(e.message?.slice(0, 80) ?? "Unknown error");
+      setGenerateError(e.message?.slice(0, 200) ?? "Unknown error");
       setTimeout(() => setGenerateError(null), 4000);
+      // Fail the job record
+      if (currentJobRef.current) {
+        setJobs(failJob(currentJobRef.current, e.message?.slice(0, 120) ?? 'Unknown error'));
+        currentJobRef.current = null;
+      }
     } finally {
       clearInterval(genTimerRef.current);
       genTimerRef.current = null;
@@ -809,78 +890,254 @@ export default function LipSyncStudio({
 
   // ── Render ──────────────────────────────────────────────────────────────
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center bg-app-bg relative overflow-hidden">
-      
+    <div className="w-full h-full flex bg-app-bg overflow-hidden">
+
+      {/* ── LEFT SIDEBAR — Folders + Job History ── */}
+      <div className="w-64 flex-shrink-0 border-r border-white/[0.06] flex flex-col overflow-hidden">
+
+        {/* ── FOLDERS SECTION ── */}
+        <div className="flex-shrink-0 border-b border-white/[0.06]">
+          <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
+            <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Folders</span>
+            <button
+              type="button"
+              onClick={() => {
+                const { folder, folders: newFolders } = createFolder('New Folder');
+                setFolders(newFolders);
+                setRenamingId(folder.id);
+                setRenameValue('New Folder');
+              }}
+              title="New folder"
+              className="text-[10px] font-bold text-white/30 hover:text-[#d9ff00] transition-colors px-1"
+            >
+              + New
+            </button>
+          </div>
+
+          {/* All Jobs row */}
+          <div
+            className={`flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
+              dragOverFolder === '__all__' ? 'bg-[#d9ff00]/10' :
+              activeFolderId === null     ? 'bg-white/[0.05]' : 'hover:bg-white/[0.03]'
+            }`}
+            onClick={() => setActiveFolderId(null)}
+            onDragOver={e => { e.preventDefault(); setDragOverFolder('__all__'); }}
+            onDragLeave={() => setDragOverFolder(null)}
+            onDrop={e => handleFolderDrop(e, null)}
+          >
+            <span className="text-sm leading-none">📂</span>
+            <span className={`text-[11px] font-semibold flex-1 ${activeFolderId === null ? 'text-white' : 'text-white/50'}`}>All Jobs</span>
+            <span className="text-[9px] text-white/25 font-mono">{jobs.length}</span>
+          </div>
+
+          {/* Folder rows */}
+          {folders.map(folder => {
+            const count = jobs.filter(j => j.folderId === folder.id).length;
+            const isActive = activeFolderId === folder.id;
+            const isDragTarget = dragOverFolder === folder.id;
+            return (
+              <div
+                key={folder.id}
+                className={`group flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
+                  isDragTarget ? 'bg-[#d9ff00]/10 border border-dashed border-[#d9ff00]/40 rounded' :
+                  isActive     ? 'bg-white/[0.05]' : 'hover:bg-white/[0.03]'
+                }`}
+                onClick={() => { if (renamingId !== folder.id) setActiveFolderId(folder.id); }}
+                onDoubleClick={e => { e.stopPropagation(); setRenamingId(folder.id); setRenameValue(folder.name); }}
+                onDragOver={e => { e.preventDefault(); setDragOverFolder(folder.id); }}
+                onDragLeave={() => setDragOverFolder(null)}
+                onDrop={e => handleFolderDrop(e, folder.id)}
+              >
+                <span className="text-sm leading-none flex-shrink-0">📁</span>
+
+                {/* Inline rename */}
+                {renamingId === folder.id ? (
+                  <input
+                    autoFocus
+                    value={renameValue}
+                    onChange={e => setRenameValue(e.target.value)}
+                    onBlur={() => {
+                      setFolders(renameFolder(folder.id, renameValue));
+                      setRenamingId(null);
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        setFolders(renameFolder(folder.id, renameValue));
+                        setRenamingId(null);
+                      }
+                      if (e.key === 'Escape') setRenamingId(null);
+                    }}
+                    onClick={e => e.stopPropagation()}
+                    className="flex-1 bg-black/60 border border-[#d9ff00]/40 rounded px-1.5 py-0.5 text-[11px] text-white outline-none min-w-0"
+                  />
+                ) : (
+                  <span className={`flex-1 text-[11px] font-semibold truncate ${isActive ? 'text-white' : 'text-white/50'}`}>
+                    {folder.name}
+                  </span>
+                )}
+
+                <span className="text-[9px] text-white/25 font-mono flex-shrink-0">{count}</span>
+
+                {/* Folder actions (hover) */}
+                {renamingId !== folder.id && (
+                  <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity">
+                    <button
+                      type="button"
+                      title="Rename"
+                      onClick={e => {
+                        e.stopPropagation();
+                        setRenamingId(folder.id);
+                        setRenameValue(folder.name);
+                      }}
+                      className="p-0.5 text-white/25 hover:text-[#d9ff00] transition-colors text-[10px]"
+                    >✎</button>
+                    <button
+                      type="button"
+                      title="Delete folder"
+                      onClick={e => {
+                        e.stopPropagation();
+                        if (window.confirm(`Delete folder "${folder.name}"? Jobs will move to All Jobs.`)) {
+                          // Unassign all jobs in this folder
+                          const updatedJobs = jobs.map(j => j.folderId === folder.id ? { ...j, folderId: null } : j);
+                          setJobs(updatedJobs);
+                          try { localStorage.setItem('lipsync_jobs_v1', JSON.stringify(updatedJobs.slice(0, 50))); } catch { /* */ }
+                          setFolders(deleteFolder(folder.id));
+                          if (activeFolderId === folder.id) setActiveFolderId(null);
+                        }
+                      }}
+                      className="p-0.5 text-white/20 hover:text-red-400 transition-colors text-[10px]"
+                    >✕</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Clear all jobs */}
+          {jobs.length > 0 && (
+            <div className="px-3 py-2">
+              <button
+                type="button"
+                onClick={() => { if (window.confirm('Clear all job history?')) setJobs(clearAllJobs()); }}
+                className="text-[9px] text-white/15 hover:text-red-400 transition-colors"
+              >
+                Clear all jobs
+              </button>
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {/* ── CENTER COLUMN ── */}
+      <div className="flex-1 flex flex-col items-center justify-center relative overflow-hidden min-w-0">
+
       {/* ── CENTRAL GALLERY AREA ── */}
       <div className="flex-1 w-full max-w-7xl mx-auto overflow-y-auto custom-scrollbar pb-40 lg:pb-32 px-2">
         {history.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full pt-4 animate-fade-in-up">
-            {history.map((entry, idx) => (
-              <div
-                key={entry.id || idx}
-                className="relative group rounded-2xl overflow-hidden border border-white/10 bg-[#0a0a0a] shadow-xl hover:border-primary/50 transition-all duration-300 flex flex-col"
-              >
-                <video
-                  src={entry.url}
-                  className="w-full aspect-video object-cover bg-black/40 cursor-pointer hover:opacity-80 transition-opacity"
-                  onClick={() => setFullscreenUrl(entry.url)}
-                  controls={false}
-                  loop
-                  muted
-                  playsInline
-                  onMouseOver={(e) => e.target.play()}
-                  onMouseOut={(e) => {
-                    e.target.pause();
-                    e.target.currentTime = 0;
-                  }}
-                />
-                
-                {/* Overlay actions */}
-                <div className="absolute top-2 right-2 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    type="button"
-                    title="Fullscreen"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setFullscreenUrl(entry.url);
-                    }}
-                    className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <polyline points="15 3 21 3 21 9" />
-                      <polyline points="9 21 3 21 3 15" />
-                      <line x1="21" y1="3" x2="14" y2="10" />
-                      <line x1="3" y1="21" x2="10" y2="14" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    title="Download"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      downloadFile(entry.url, `lipsync-${entry.id || idx}.mp4`);
-                    }}
-                    className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
-                    </svg>
-                  </button>
-                </div>
+            {history
+              .filter(entry => {
+                const matchedJob = jobs.find(j => j.outputUrl === entry.url);
+                if (activeFolderId === null) return !matchedJob?.folderId; // All Jobs — only unassigned
+                return matchedJob?.folderId === activeFolderId;
+              })
+              .map((entry, idx) => {
+              // Find the matching job (by outputUrl) to show folder badge
+              const matchedJob = jobs.find(j => j.outputUrl === entry.url);
+              const assignedFolder = matchedJob?.folderId
+                ? folders.find(f => f.id === matchedJob.folderId)
+                : null;
 
-                {/* Details */}
-                <div className="p-3 bg-black/80 backdrop-blur-sm border-t border-white/5 flex-1 flex flex-col justify-between gap-2">
-                  <div className="flex items-center justify-between flex-wrap gap-1">
-                    <span className="text-[10px] font-bold text-primary px-2 py-0.5 bg-primary/10 rounded border border-primary/20 whitespace-nowrap">
-                      {entry.model?.name || entry.model || "Lip Sync"}
-                    </span>
-                    {entry.resolution && (
-                      <span className="text-[10px] text-white/40">{entry.resolution}</span>
-                    )}
+              return (
+                <div
+                  key={entry.id || idx}
+                  draggable
+                  onDragStart={e => {
+                    e.dataTransfer.setData('entryUrl', entry.url);
+                    e.dataTransfer.effectAllowed = 'move';
+                    // Draw a small thumbnail from the video's current frame
+                    const W = 128, H = 72;
+                    const canvas = document.createElement('canvas');
+                    canvas.width = W; canvas.height = H;
+                    canvas.style.cssText = 'position:fixed;top:-300px;left:-300px;border-radius:8px;';
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#111';
+                    ctx.fillRect(0, 0, W, H);
+                    const vid = e.currentTarget.querySelector('video');
+                    try { if (vid) ctx.drawImage(vid, 0, 0, W, H); } catch {}
+                    // bottom label bar
+                    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                    ctx.fillRect(0, H - 18, W, 18);
+                    ctx.fillStyle = '#d9ff00';
+                    ctx.font = '10px sans-serif';
+                    ctx.fillText('⠿ drag to folder', 6, H - 5);
+                    document.body.appendChild(canvas);
+                    e.dataTransfer.setDragImage(canvas, W / 2, H / 2);
+                    setTimeout(() => document.body.removeChild(canvas), 0);
+                  }}
+                  className="relative group rounded-2xl overflow-hidden border border-white/10 bg-[#0a0a0a] shadow-xl hover:border-primary/50 transition-all duration-300 flex flex-col cursor-grab active:cursor-grabbing"
+                >
+                  {/* Drag hint overlay */}
+                  <div className="absolute inset-0 z-20 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity flex items-start justify-start p-2">
+                    <span className="text-white/30 text-xs bg-black/50 rounded px-1.5 py-0.5 backdrop-blur-sm select-none">⠿ drag to folder</span>
+                  </div>
+
+                  <video
+                    src={entry.url}
+                    className="w-full aspect-video object-cover bg-black/40 cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => setFullscreenUrl(entry.url)}
+                    controls={false}
+                    loop
+                    muted
+                    playsInline
+                    onMouseOver={(e) => e.target.play()}
+                    onMouseOut={(e) => { e.target.pause(); e.target.currentTime = 0; }}
+                  />
+
+                  {/* Overlay actions */}
+                  <div className="absolute top-2 right-2 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-30">
+                    <button
+                      type="button"
+                      title="Fullscreen"
+                      onClick={(e) => { e.stopPropagation(); setFullscreenUrl(entry.url); }}
+                      className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" />
+                        <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      title="Download"
+                      onClick={(e) => { e.stopPropagation(); downloadFile(entry.url, `lipsync-${entry.id || idx}.mp4`); }}
+                      className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Details + folder badge */}
+                  <div className="p-3 bg-black/80 backdrop-blur-sm border-t border-white/5 flex-1 flex flex-col justify-between gap-2">
+                    <div className="flex items-center justify-between flex-wrap gap-1">
+                      <span className="text-[10px] font-bold text-primary px-2 py-0.5 bg-primary/10 rounded border border-primary/20 whitespace-nowrap">
+                        {entry.model?.name || entry.model || "Lip Sync"}
+                      </span>
+                      {assignedFolder ? (
+                        <span className="text-[9px] text-white/40 flex items-center gap-1">
+                          📁 {assignedFolder.name}
+                        </span>
+                      ) : entry.resolution ? (
+                        <span className="text-[10px] text-white/40">{entry.resolution}</span>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full animate-fade-in-up transition-all duration-700 min-h-[50vh]">
@@ -938,153 +1195,176 @@ export default function LipSyncStudio({
             </button>
           </div>
 
-          {/* Uploads row */}
+          {/* Uploads row — always clean: just pickers + AI AUDIO */}
           <div className="flex items-center gap-2 px-1">
-            <div className="flex items-center gap-2">
-              {/* Image picker — only in image mode */}
-              {inputMode === "image" && (
-                <MediaPickerButton
-                  accept="image/*"
-                  label="Image"
-                  icon={
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      className="text-white/40 group-hover:text-primary transition-colors"
-                    >
-                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                      <circle cx="8.5" cy="8.5" r="1.5" />
-                      <polyline points="21 15 16 10 5 21" />
-                    </svg>
-                  }
-                  onUpload={handleImageUpload}
-                  onClear={() => {
-                    setImageUrl(null);
-                    setImageState(UPLOAD_STATE.IDLE);
-                    setImageName("");
-                  }}
-                  uploadState={imageState}
-                  progress={imageProgress}
-                  fileName={imageName}
-                  previewUrl={imageUrl}
-                  isVideo={false}
-                  apiKey={apiKey}
-                />
-              )}
-
-              {/* Video picker — only in video mode */}
-              {inputMode === "video" && (
-                <MediaPickerButton
-                  accept="video/*"
-                  label="Video"
-                  icon={
-                    <VideoIcon className="text-white/40 group-hover:text-primary transition-colors" />
-                  }
-                  onUpload={handleVideoPick}
-                  onClear={() => {
-                    setVideoUrl(null);
-                    setVideoState(UPLOAD_STATE.IDLE);
-                    setVideoName("");
-                  }}
-                  uploadState={videoState}
-                  progress={videoProgress}
-                  fileName={videoName}
-                  previewUrl={videoUrl}
-                  isVideo={true}
-                  apiKey={apiKey}
-                />
-              )}
-
-              {/* Audio picker — always visible */}
+            {/* Image picker — only in image mode */}
+            {inputMode === "image" && (
               <MediaPickerButton
-                accept="audio/*"
-                label="Audio"
+                accept="image/*"
+                label="Image"
                 icon={
-                  <MicIcon className="text-white/40 group-hover:text-primary transition-colors" />
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    className="text-white/40 group-hover:text-primary transition-colors"
+                  >
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
                 }
-                onUpload={handleAudioPick}
+                onUpload={handleImageUpload}
                 onClear={() => {
-                  setAudioUrl(null);
-                  setAudioState(UPLOAD_STATE.IDLE);
-                  setAudioName("");
+                  setImageUrl(null);
+                  setImageState(UPLOAD_STATE.IDLE);
+                  setImageName("");
                 }}
-                uploadState={audioState}
-                progress={audioProgress}
-                fileName={audioName}
-                previewUrl={null}
+                uploadState={imageState}
+                progress={imageProgress}
+                fileName={imageName}
+                previewUrl={imageUrl}
                 isVideo={false}
                 apiKey={apiKey}
               />
+            )}
 
-              {/* ElevenLabs AI audio button */}
-              <button
-                type="button"
-                onClick={handleElevenLabsOpen}
-                title="Generate audio with ElevenLabs"
-                className={`flex-shrink-0 w-10 h-10 rounded-full border transition-all flex flex-col items-center justify-center gap-0.5 group ${showElevenLabs ? 'border-[#d9ff00]/60 bg-[#d9ff00]/10 text-[#d9ff00]' : 'border-white/[0.03] bg-white/[0.03] hover:bg-white/[0.06] hover:border-[#d9ff00]/40 text-white/40 hover:text-[#d9ff00]'}`}
-              >
-                <span className="text-[10px] font-black leading-none">AI</span>
-                <span className="text-[7px] leading-none">AUDIO</span>
-              </button>
+            {/* Video picker — only in video mode */}
+            {inputMode === "video" && (
+              <MediaPickerButton
+                accept="video/*"
+                label="Video"
+                icon={
+                  <VideoIcon className="text-white/40 group-hover:text-primary transition-colors" />
+                }
+                onUpload={handleVideoPick}
+                onClear={() => {
+                  setVideoUrl(null);
+                  setVideoState(UPLOAD_STATE.IDLE);
+                  setVideoName("");
+                }}
+                uploadState={videoState}
+                progress={videoProgress}
+                fileName={videoName}
+                previewUrl={videoUrl}
+                isVideo={true}
+                apiKey={apiKey}
+              />
+            )}
+
+            {/* Audio picker */}
+            <MediaPickerButton
+              accept="audio/*"
+              label="Audio"
+              icon={
+                <MicIcon className="text-white/40 group-hover:text-primary transition-colors" />
+              }
+              onUpload={handleAudioPick}
+              onClear={() => {
+                setAudioUrl(null);
+                setAudioState(UPLOAD_STATE.IDLE);
+                setAudioName("");
+              }}
+              uploadState={audioState}
+              progress={audioProgress}
+              fileName={audioName}
+              previewUrl={null}
+              isVideo={false}
+              apiKey={apiKey}
+            />
+
+            {/* ElevenLabs AI audio button */}
+            <button
+              type="button"
+              onClick={handleElevenLabsOpen}
+              title="Generate audio with ElevenLabs"
+              className={`flex-shrink-0 w-10 h-10 rounded-full border transition-all flex flex-col items-center justify-center gap-0.5 group ${showElevenLabs ? 'border-[#d9ff00]/60 bg-[#d9ff00]/10 text-[#d9ff00]' : 'border-white/[0.03] bg-white/[0.03] hover:bg-white/[0.06] hover:border-[#d9ff00]/40 text-white/40 hover:text-[#d9ff00]'}`}
+            >
+              <span className="text-[10px] font-black leading-none">AI</span>
+              <span className="text-[7px] leading-none">AUDIO</span>
+            </button>
+
+            {/* Status labels */}
+            <div className="flex-1 flex flex-col gap-0.5 px-1 min-w-0">
+              <span className={`text-[11px] font-medium truncate ${mediaStatusClass}`}>{mediaStatusText}</span>
+              <span className={`text-[11px] font-medium truncate ${audioStatusClass}`}>{audioStatusText}</span>
             </div>
+          </div>
 
-            {/* ElevenLabs panel */}
-            {showElevenLabs && (
-              <div className="mx-1 p-3 rounded-lg bg-white/[0.03] border border-white/[0.05] flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#d9ff00]">🎙 Generate Audio — ElevenLabs</span>
-                  <button type="button" onClick={() => setShowElevenLabs(false)} className="text-white/30 hover:text-white text-xs">✕</button>
-                </div>
-                {elError && <p className="text-xs text-red-400">{elError}</p>}
-                {elVoices.length > 0 && (
-                  <select
-                    value={elSelectedVoice}
-                    onChange={e => setElSelectedVoice(e.target.value)}
-                    className="w-full bg-white/[0.05] border border-white/10 rounded-md px-2 py-1.5 text-xs text-white focus:outline-none focus:border-[#d9ff00]/40"
-                  >
-                    {elVoices.map(v => (
-                      <option key={v.voice_id} value={v.voice_id}>{v.name}</option>
-                    ))}
-                  </select>
-                )}
-                <textarea
-                  value={elScript}
-                  onChange={e => setElScript(e.target.value.slice(0, 5000))}
-                  placeholder="Type your script here..."
-                  rows={3}
-                  className="w-full bg-white/[0.05] border border-white/10 rounded-md px-2 py-1.5 text-xs text-white placeholder:text-white/20 resize-none focus:outline-none focus:border-[#d9ff00]/40"
-                />
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-white/20">{elScript.length} / 5000</span>
+          {/* ElevenLabs panel */}
+          {showElevenLabs && (
+            <div className="mx-1 p-3 rounded-lg bg-white/[0.03] border border-white/[0.05] flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-[#d9ff00]">🎙 Generate Audio — ElevenLabs</span>
+                <button type="button" onClick={() => setShowElevenLabs(false)} className="text-white/30 hover:text-white text-xs">✕</button>
+              </div>
+              {elError && <p className="text-xs text-red-400">{elError}</p>}
+              {elVoices.length > 0 && (
+                <select
+                  value={elSelectedVoice}
+                  onChange={e => setElSelectedVoice(e.target.value)}
+                  className="w-full bg-white/[0.05] border border-white/10 rounded-md px-2 py-1.5 text-xs text-white focus:outline-none focus:border-[#d9ff00]/40"
+                >
+                  {elVoices.map(v => (
+                    <option key={v.voice_id} value={v.voice_id}>{v.name}</option>
+                  ))}
+                </select>
+              )}
+              <textarea
+                value={elScript}
+                onChange={e => setElScript(e.target.value.slice(0, 5000))}
+                placeholder="Type your script here..."
+                rows={3}
+                className="w-full bg-white/[0.05] border border-white/10 rounded-md px-2 py-1.5 text-xs text-white placeholder:text-white/20 resize-none focus:outline-none focus:border-[#d9ff00]/40"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-white/20">{elScript.length} / 5000</span>
+                <button
+                  type="button"
+                  onClick={handleElevenLabsGenerate}
+                  disabled={elGenerating || !elScript.trim()}
+                  className="px-3 py-1.5 rounded-md bg-[#d9ff00] text-black text-xs font-bold hover:bg-[#e5ff33] transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                >
+                  {elGenerating ? <><span className="animate-spin">◌</span> Generating...</> : 'Generate Audio'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Style hint — optional, collapsed by default, only for models that support prompt */}
+          {showPrompt && (
+            <div className="px-1">
+              {!showStyleHint ? (
+                <button
+                  type="button"
+                  onClick={() => setShowStyleHint(true)}
+                  className="text-[10px] text-white/20 hover:text-white/50 transition-colors"
+                >
+                  + Add style hint (optional)
+                </button>
+              ) : (
+                <div className="flex items-start gap-2">
+                  <textarea
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder="Optional: describe speech style or motion (e.g. 'slow and calm', 'energetic')"
+                    className="flex-1 bg-white/[0.03] border border-white/[0.05] text-white text-xs placeholder:text-white/20 focus:outline-none focus:border-primary/30 resize-none rounded-md px-2 py-1.5 leading-relaxed"
+                    rows={2}
+                  />
                   <button
                     type="button"
-                    onClick={handleElevenLabsGenerate}
-                    disabled={elGenerating || !elScript.trim()}
-                    className="px-3 py-1.5 rounded-md bg-[#d9ff00] text-black text-xs font-bold hover:bg-[#e5ff33] transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                    onClick={() => { setShowStyleHint(false); setPrompt(""); }}
+                    className="text-white/20 hover:text-white/50 text-xs mt-1 flex-shrink-0"
                   >
-                    {elGenerating ? <><span className="animate-spin">◌</span> Generating...</> : 'Generate Audio'}
+                    ✕
                   </button>
                 </div>
-              </div>
-            )}
-
-            {/* Prompt textarea */}
-            {showPrompt && (
-              <div className="flex-1 flex flex-col">
-                <textarea
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Describe speech style..."
-                  className="w-full bg-transparent border-none text-white text-sm placeholder:text-white/10 focus:outline-none resize-none pt-1 leading-relaxed min-h-[40px] max-h-[150px] md:max-h-[250px] overflow-y-auto custom-scrollbar disabled:opacity-40"
-                  rows={1}
-                />
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
           {/* Generation progress bar + status */}
           {isGenerating && (
@@ -1139,6 +1419,15 @@ export default function LipSyncStudio({
                   <span className="text-xs font-semibold text-white/70 group-hover:text-[#d9ff00] transition-colors">
                     {selectedModel?.name ?? "Select model"}
                   </span>
+                  {selectedModel?.provider && (
+                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold leading-none ${
+                      selectedModel.provider === 'Replicate'
+                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                        : 'bg-white/5 text-white/30 border border-white/10'
+                    }`}>
+                      {selectedModel.provider}
+                    </span>
+                  )}
                   <svg
                     width="10"
                     height="10"
@@ -1173,7 +1462,8 @@ export default function LipSyncStudio({
 
               {/* Resolution selector */}
               {showResolution && (
-                <div className="relative">
+                <div className="relative flex items-center gap-1">
+                  <span className="text-[10px] text-white/20 whitespace-nowrap">Quality:</span>
                   <button
                     ref={resolutionBtnRef}
                     type="button"
@@ -1188,6 +1478,9 @@ export default function LipSyncStudio({
                     <span className="text-xs font-semibold text-white/70 group-hover:text-[#d9ff00] transition-colors">
                       {selectedResolution}
                     </span>
+                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" className="opacity-40">
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
                   </button>
                   <Dropdown
                     isOpen={openDropdown === "resolution"}
@@ -1224,6 +1517,8 @@ export default function LipSyncStudio({
           </div>
         </div>
       </div>
+
+      </div>{/* end center column */}
 
       {/* ── FULLSCREEN MEDIA MODAL ── */}
       {fullscreenUrl && (

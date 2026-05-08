@@ -100,6 +100,58 @@ function ProviderCard({ name, icon, storageKey, placeholder, helpText, helpUrl, 
     );
 }
 
+function V2VBackendConfig() {
+    const [url, setUrl] = useState('');
+    const [saved, setSaved] = useState(false);
+
+    useEffect(() => {
+        setUrl(localStorage.getItem('v2v_backend_url') || 'http://localhost:8000');
+    }, []);
+
+    const handleSave = () => {
+        localStorage.setItem('v2v_backend_url', url.trim() || 'http://localhost:8000');
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+    };
+
+    return (
+        <div className="flex flex-col gap-3">
+            <label className="text-xs font-bold text-white/40 uppercase tracking-widest">Video-to-Video Backend</label>
+            <div className="flex flex-col gap-3 p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <span className="text-lg">🎬</span>
+                        <span className="text-sm font-bold text-white">V2V Backend URL</span>
+                    </div>
+                    {saved && <span className="text-xs text-green-400">● Saved</span>}
+                </div>
+                <div>
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1 block">Backend URL</label>
+                    <div className="flex items-center gap-2 bg-black/40 border border-white/10 rounded-lg px-3 py-2 focus-within:border-[#d9ff00]/40 transition-colors">
+                        <input
+                            type="url"
+                            value={url}
+                            onChange={e => setUrl(e.target.value)}
+                            placeholder="http://localhost:8000"
+                            className="flex-1 bg-transparent text-sm text-white placeholder:text-white/20 outline-none"
+                        />
+                    </div>
+                    <p className="text-[10px] text-white/20 mt-1">
+                        Start the Python backend: <code className="text-white/40">cd backend && uvicorn app.main:app --reload</code>
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={handleSave}
+                    className="w-full py-1.5 rounded-lg bg-[#d9ff00] text-black text-xs font-bold hover:bg-[#e5ff33] transition-all"
+                >
+                    Save
+                </button>
+            </div>
+        </div>
+    );
+}
+
 export default function SettingsStudio() {
     const [activeProvider, setActive] = useState('muapi');
 
@@ -167,6 +219,7 @@ export default function SettingsStudio() {
                         helpText="Get your token at replicate.com/account"
                         helpUrl="https://replicate.com/account/api-tokens"
                         onTest={replicateTest}
+                        onSave={(key) => window.dispatchEvent(new CustomEvent('replicate-token-saved', { detail: { key } }))}
                     />
                     <ProviderCard
                         name="ElevenLabs"
@@ -178,6 +231,9 @@ export default function SettingsStudio() {
                         onTest={elTest}
                     />
                 </div>
+
+                {/* V2V Backend */}
+                <V2VBackendConfig />
 
                 {/* Studio Readiness */}
                 <div className="flex flex-col gap-2">

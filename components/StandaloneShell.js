@@ -2,19 +2,21 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ImageStudio, VideoStudio, LipSyncStudio, CinemaStudio, MarketingStudio, WorkflowStudio, AgentStudio, AppsStudio, SettingsStudio, getUserBalance } from 'studio';
+import { ImageStudio, VideoStudio, LipSyncStudio, CinemaStudio, MarketingStudio, WorkflowStudio, AgentStudio, AppsStudio, SettingsStudio, CanvEditor, V2VStudio, getUserBalance, getReplicateAccount } from 'studio';
 import axios from 'axios';
 
 const TABS = [
-  { id: 'image',   label: 'Image Studio' },
-  { id: 'video',   label: 'Video Studio' },
-  { id: 'lipsync', label: 'Lip Sync' },
-  { id: 'cinema',  label: 'Cinema Studio' },
-  { id: 'marketing', label: 'Marketing Studio' },
-  { id: 'workflows', label: 'Workflows' },
-  { id: 'agents', label: 'Agents' },
-  { id: 'apps', label: 'Explore Apps' },
-  { id: 'settings', label: '⚙ Settings' },
+  { id: 'image',      label: 'Image Studio' },
+  { id: 'video',      label: 'Video Studio' },
+  { id: 'lipsync',    label: 'Lip Sync' },
+  { id: 'cinema',     label: 'Cinema Studio' },
+  { id: 'canveditor', label: '✂ Canv Editor' },
+  { id: 'v2vstudio',  label: '🎬 V2V Studio' },
+  { id: 'marketing',  label: 'Marketing Studio' },
+  { id: 'workflows',  label: 'Workflows' },
+  { id: 'agents',     label: 'Agents' },
+  { id: 'apps',       label: 'Explore Apps' },
+  { id: 'settings',   label: '⚙ Settings' },
 ];
 
 const STORAGE_KEY = 'muapi_key';
@@ -55,6 +57,7 @@ export default function StandaloneShell() {
   const [activeTab, setActiveTab] = useState(getInitialTab());
   
   const [balance, setBalance] = useState(null);
+  const [replicateUser, setReplicateUser] = useState(null); // { username, name } or null
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const [hasMounted, setHasMounted] = useState(false);
 
@@ -112,6 +115,16 @@ export default function StandaloneShell() {
     }
   }, []);
 
+  const fetchReplicateAccount = useCallback(async (token) => {
+    if (!token) { setReplicateUser(null); return; }
+    try {
+      const data = await getReplicateAccount(token);
+      setReplicateUser(data); // { username, name, ... }
+    } catch {
+      setReplicateUser(null);
+    }
+  }, []);
+
   useEffect(() => {
     setHasMounted(true);
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -137,8 +150,22 @@ export default function StandaloneShell() {
       }
     };
     window.addEventListener('muapi-key-saved', handleMuapiKeySaved);
-    return () => window.removeEventListener('muapi-key-saved', handleMuapiKeySaved);
-  }, [fetchBalance]);
+
+    // Load Replicate token and fetch account info
+    const storedReplicate = localStorage.getItem('replicate_token');
+    fetchReplicateAccount(storedReplicate);
+
+    const handleReplicateTokenSaved = (e) => {
+      const token = e.detail?.key;
+      fetchReplicateAccount(token || null);
+    };
+    window.addEventListener('replicate-token-saved', handleReplicateTokenSaved);
+
+    return () => {
+      window.removeEventListener('muapi-key-saved', handleMuapiKeySaved);
+      window.removeEventListener('replicate-token-saved', handleReplicateTokenSaved);
+    };
+  }, [fetchBalance, fetchReplicateAccount]);
 
   // Inject API key into all outgoing Axios requests (prop-based approach)
   // We use an interceptor to be selective and NOT send the key to external domains like S3
@@ -181,7 +208,10 @@ export default function StandaloneShell() {
   const handleDragEnter = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+    // Only show the overlay for real filesystem file drags, not internal card drags
+    const hasFiles = e.dataTransfer.items &&
+      Array.from(e.dataTransfer.items).some(item => item.kind === 'file');
+    if (hasFiles) {
       setIsDragging(true);
     }
   }, []);
@@ -274,16 +304,7 @@ export default function StandaloneShell() {
           </nav>
 
           {/* Right: Actions */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3 bg-white/5 px-3 py-1.5 rounded-full border border-white/5 transition-colors">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <div className="flex flex-col">
-                <span className="text-xs font-bold text-white/90">
-                  ${balance !== null ? `${balance}` : '---'}
-                </span>
-              </div>
-            </div>
-
+          <div className="flex flex-col items-end gap-0.5">
             <button
               onClick={() => handleTabChange('settings')}
               title="Settings — API keys, provider toggle"
@@ -295,6 +316,31 @@ export default function StandaloneShell() {
               </svg>
               <span>Settings</span>
             </button>
+            <div className="flex items-center gap-2 pr-1">
+              {/* MuAPI balance */}
+              <div className="flex items-center gap-1.5">
+                <div className={`w-1.5 h-1.5 rounded-full ${balance !== null ? 'bg-green-500 animate-pulse' : 'bg-white/20'}`} />
+                <span className="text-[10px] text-white/30 font-medium">Muapi</span>
+                <span className="text-[11px] font-bold text-white/60">
+                  {balance !== null ? `$${balance}` : '---'}
+                </span>
+              </div>
+              <span className="text-white/10 text-xs">|</span>
+              {/* Replicate account — credit balance not in public API, link to dashboard */}
+              <a
+                href="https://replicate.com/account/billing"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Replicate credit balance (opens billing dashboard)"
+                className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${replicateUser ? 'bg-purple-400 animate-pulse' : 'bg-white/20'}`} />
+                <span className="text-[10px] text-white/30 font-medium">Replicate</span>
+                <span className="text-[11px] font-bold text-white/60">
+                  {replicateUser ? `${replicateUser.username} ↗` : '---'}
+                </span>
+              </a>
+            </div>
           </div>
         </header>
       )}
@@ -322,6 +368,8 @@ export default function StandaloneShell() {
         {activeTab === 'workflows' && <WorkflowStudio apiKey={apiKey} isHeaderVisible={isHeaderVisible} onToggleHeader={setIsHeaderVisible} />}
         {activeTab === 'agents' && <AgentStudio apiKey={apiKey} isHeaderVisible={isHeaderVisible} onToggleHeader={setIsHeaderVisible} />}
         {activeTab === 'apps' && <AppsStudio apiKey={apiKey} />}
+        {activeTab === 'canveditor' && <CanvEditor />}
+        {activeTab === 'v2vstudio' && <V2VStudio />}
         {activeTab === 'settings' && <SettingsStudio />}
       </div>
     </div>
