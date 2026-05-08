@@ -2,19 +2,21 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ImageStudio, VideoStudio, LipSyncStudio, CinemaStudio, MarketingStudio, WorkflowStudio, AgentStudio, AppsStudio, getUserBalance } from 'studio';
+import { ImageStudio, VideoStudio, LipSyncStudio, CinemaStudio, MarketingStudio, WorkflowStudio, AgentStudio, AppsStudio, SettingsStudio, CanvEditor, V2VStudio, getUserBalance, getReplicateAccount } from 'studio';
 import axios from 'axios';
-import ApiKeyModal from './ApiKeyModal';
 
 const TABS = [
-  { id: 'image',   label: 'Image Studio' },
-  { id: 'video',   label: 'Video Studio' },
-  { id: 'lipsync', label: 'Lip Sync' },
-  { id: 'cinema',  label: 'Cinema Studio' },
-  { id: 'marketing', label: 'Marketing Studio' },
-  { id: 'workflows', label: 'Workflows' },
-  { id: 'agents', label: 'Agents' },
-  { id: 'apps', label: 'Explore Apps' },
+  { id: 'image',      label: 'Image Studio' },
+  { id: 'video',      label: 'Video Studio' },
+  { id: 'lipsync',    label: 'Lip Sync' },
+  { id: 'cinema',     label: 'Cinema Studio' },
+  { id: 'canveditor', label: '✂ Canv Editor' },
+  { id: 'v2vstudio',  label: '🎬 V2V Studio' },
+  { id: 'marketing',  label: 'Marketing Studio' },
+  { id: 'workflows',  label: 'Workflows' },
+  { id: 'agents',     label: 'Agents' },
+  { id: 'apps',       label: 'Explore Apps' },
+  { id: 'settings',   label: '⚙ Settings' },
 ];
 
 const STORAGE_KEY = 'muapi_key';
@@ -55,7 +57,7 @@ export default function StandaloneShell() {
   const [activeTab, setActiveTab] = useState(getInitialTab());
   
   const [balance, setBalance] = useState(null);
-  const [showSettings, setShowSettings] = useState(false);
+  const [replicateUser, setReplicateUser] = useState(null); // { username, name } or null
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const [hasMounted, setHasMounted] = useState(false);
 
@@ -113,30 +115,57 @@ export default function StandaloneShell() {
     }
   }, []);
 
+  const fetchReplicateAccount = useCallback(async (token) => {
+    if (!token) { setReplicateUser(null); return; }
+    try {
+      const data = await getReplicateAccount(token);
+      setReplicateUser(data); // { username, name, ... }
+    } catch {
+      setReplicateUser(null);
+    }
+  }, []);
+
   useEffect(() => {
     setHasMounted(true);
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       setApiKey(stored);
       fetchBalance(stored);
-      // Sync cookie immediately on mount to establish identity for background requests
       document.cookie = `muapi_key=${stored}; path=/; max-age=31536000; SameSite=Lax`;
+    } else {
+      // No Muapi key — send the user to Settings unless the URL specifies a tab
+      const firstSegment = (params?.slug || [])[0];
+      if (!firstSegment || firstSegment === 'image') {
+        setActiveTab('settings');
+      }
     }
-  }, [fetchBalance]);
 
-  const handleKeySave = useCallback((key) => {
-    localStorage.setItem(STORAGE_KEY, key);
-    setApiKey(key);
-    fetchBalance(key);
-    document.cookie = `muapi_key=${key}; path=/; max-age=31536000; SameSite=Lax`;
-  }, [fetchBalance]);
+    // Sync apiKey state when SettingsStudio saves the Muapi key in the same tab
+    const handleMuapiKeySaved = (e) => {
+      const key = e.detail?.key;
+      if (key) {
+        setApiKey(key);
+        fetchBalance(key);
+        document.cookie = `muapi_key=${key}; path=/; max-age=31536000; SameSite=Lax`;
+      }
+    };
+    window.addEventListener('muapi-key-saved', handleMuapiKeySaved);
 
-  const handleKeyChange = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
-    setApiKey(null);
-    setBalance(null);
-    document.cookie = "muapi_key=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-  }, []);
+    // Load Replicate token and fetch account info
+    const storedReplicate = localStorage.getItem('replicate_token');
+    fetchReplicateAccount(storedReplicate);
+
+    const handleReplicateTokenSaved = (e) => {
+      const token = e.detail?.key;
+      fetchReplicateAccount(token || null);
+    };
+    window.addEventListener('replicate-token-saved', handleReplicateTokenSaved);
+
+    return () => {
+      window.removeEventListener('muapi-key-saved', handleMuapiKeySaved);
+      window.removeEventListener('replicate-token-saved', handleReplicateTokenSaved);
+    };
+  }, [fetchBalance, fetchReplicateAccount]);
 
   // Inject API key into all outgoing Axios requests (prop-based approach)
   // We use an interceptor to be selective and NOT send the key to external domains like S3
@@ -179,7 +208,10 @@ export default function StandaloneShell() {
   const handleDragEnter = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+    // Only show the overlay for real filesystem file drags, not internal card drags
+    const hasFiles = e.dataTransfer.items &&
+      Array.from(e.dataTransfer.items).some(item => item.kind === 'file');
+    if (hasFiles) {
       setIsDragging(true);
     }
   }, []);
@@ -212,10 +244,6 @@ export default function StandaloneShell() {
       <div className="animate-spin text-[#d9ff00] text-3xl">◌</div>
     </div>
   );
-
-  if (!apiKey) {
-    return <ApiKeyModal onSave={handleKeySave} />;
-  }
 
   return (
     <div 
@@ -276,20 +304,11 @@ export default function StandaloneShell() {
           </nav>
 
           {/* Right: Actions */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3 bg-white/5 px-3 py-1.5 rounded-full border border-white/5 transition-colors">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <div className="flex flex-col">
-                <span className="text-xs font-bold text-white/90">
-                  ${balance !== null ? `${balance}` : '---'}
-                </span>
-              </div>
-            </div>
-
+          <div className="flex flex-col items-end gap-0.5">
             <button
-              onClick={() => setShowSettings(true)}
-              title="Settings — API key, local models, preferences"
-              className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-white/10 bg-white/5 text-[13px] font-bold text-white/80 hover:text-white hover:bg-white/10 hover:border-white/20 transition-colors"
+              onClick={() => handleTabChange('settings')}
+              title="Settings — API keys, provider toggle"
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md border text-[13px] font-bold transition-colors ${activeTab === 'settings' ? 'border-[#d9ff00]/40 bg-[#d9ff00]/10 text-[#d9ff00]' : 'border-white/10 bg-white/5 text-white/80 hover:text-white hover:bg-white/10 hover:border-white/20'}`}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="3" />
@@ -297,8 +316,46 @@ export default function StandaloneShell() {
               </svg>
               <span>Settings</span>
             </button>
+            <div className="flex items-center gap-2 pr-1">
+              {/* MuAPI balance */}
+              <div className="flex items-center gap-1.5">
+                <div className={`w-1.5 h-1.5 rounded-full ${balance !== null ? 'bg-green-500 animate-pulse' : 'bg-white/20'}`} />
+                <span className="text-[10px] text-white/30 font-medium">Muapi</span>
+                <span className="text-[11px] font-bold text-white/60">
+                  {balance !== null ? `$${balance}` : '---'}
+                </span>
+              </div>
+              <span className="text-white/10 text-xs">|</span>
+              {/* Replicate account — credit balance not in public API, link to dashboard */}
+              <a
+                href="https://replicate.com/account/billing"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Replicate credit balance (opens billing dashboard)"
+                className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${replicateUser ? 'bg-purple-400 animate-pulse' : 'bg-white/20'}`} />
+                <span className="text-[10px] text-white/30 font-medium">Replicate</span>
+                <span className="text-[11px] font-bold text-white/60">
+                  {replicateUser ? `${replicateUser.username} ↗` : '---'}
+                </span>
+              </a>
+            </div>
           </div>
         </header>
+      )}
+
+      {/* No Muapi key banner — shown on studios that need it */}
+      {!apiKey && !['settings', 'lipsync'].includes(activeTab) && (
+        <div className="flex-shrink-0 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 flex items-center justify-between gap-4">
+          <span className="text-xs text-amber-400">⚠ Muapi API key not configured — this studio requires it to generate.</span>
+          <button
+            onClick={() => handleTabChange('settings')}
+            className="text-xs font-bold text-[#d9ff00] hover:underline whitespace-nowrap"
+          >
+            Go to Settings →
+          </button>
+        </div>
       )}
 
       {/* Studio Content */}
@@ -311,45 +368,10 @@ export default function StandaloneShell() {
         {activeTab === 'workflows' && <WorkflowStudio apiKey={apiKey} isHeaderVisible={isHeaderVisible} onToggleHeader={setIsHeaderVisible} />}
         {activeTab === 'agents' && <AgentStudio apiKey={apiKey} isHeaderVisible={isHeaderVisible} onToggleHeader={setIsHeaderVisible} />}
         {activeTab === 'apps' && <AppsStudio apiKey={apiKey} />}
+        {activeTab === 'canveditor' && <CanvEditor />}
+        {activeTab === 'v2vstudio' && <V2VStudio />}
+        {activeTab === 'settings' && <SettingsStudio />}
       </div>
-
-      {/* Settings Modal */}
-      {showSettings && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in-up">
-          <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-8 w-full max-w-sm shadow-2xl">
-            <h2 className="text-white font-bold text-lg mb-2">Settings</h2>
-            <p className="text-white/40 text-[13px] mb-8">
-              Manage your AI studio preferences and authentication.
-            </p>
-            
-            <div className="space-y-4 mb-8">
-              <div className="bg-white/5 border border-white/[0.03] rounded-md p-4">
-                <label className="block text-xs font-bold text-white/30 mb-2">
-                   Active API Key
-                </label>
-                <div className="text-[13px] font-mono text-white/80">
-                  {apiKey.slice(0, 8)}••••••••••••••••
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={handleKeyChange}
-                className="flex-1 h-10 rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 text-xs font-semibold transition-all"
-              >
-                Change Key
-              </button>
-              <button
-                onClick={() => setShowSettings(false)}
-                className="flex-1 h-10 rounded-md bg-white/5 text-white/80 hover:bg-white/10 text-xs font-semibold transition-all border border-white/5"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

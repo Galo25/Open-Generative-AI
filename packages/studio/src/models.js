@@ -39,6 +39,7 @@ export const t2iModels = [
     "id": "flux-dev",
     "name": "Flux Dev",
     "endpoint": "flux-dev-image",
+    "replicateId": "black-forest-labs/flux-dev",
     "inputs": {
       "prompt": {
         "examples": [
@@ -165,6 +166,7 @@ export const t2iModels = [
   {
     "id": "flux-kontext-dev-t2i",
     "name": "Flux Kontext Dev T2I",
+    "replicateId": "black-forest-labs/flux-kontext-dev",
     "inputs": {
       "prompt": {
         "examples": [
@@ -416,6 +418,7 @@ export const t2iModels = [
   {
     "id": "flux-kontext-pro-t2i",
     "name": "Flux Kontext Pro T2I",
+    "replicateId": "black-forest-labs/flux-kontext-pro",
     "inputs": {
       "prompt": {
         "examples": [
@@ -447,6 +450,7 @@ export const t2iModels = [
   {
     "id": "flux-kontext-max-t2i",
     "name": "Flux Kontext Max T2I",
+    "replicateId": "black-forest-labs/flux-kontext-max",
     "inputs": {
       "prompt": {
         "examples": [
@@ -595,6 +599,7 @@ export const t2iModels = [
     "id": "flux-schnell",
     "name": "Flux Schnell",
     "endpoint": "flux-schnell-image",
+    "replicateId": "black-forest-labs/flux-schnell",
     "inputs": {
       "prompt": {
         "examples": [
@@ -925,6 +930,7 @@ export const t2iModels = [
   {
     "id": "sdxl-image",
     "name": "Sdxl Image",
+    "replicateId": "stability-ai/sdxl",
     "inputs": {
       "prompt": {
         "examples": [
@@ -1581,6 +1587,7 @@ export const t2iModels = [
   {
     "id": "flux-2-dev",
     "name": "Flux 2 Dev",
+    "replicateId": "black-forest-labs/flux-dev",
     "inputs": {
       "prompt": {
         "examples": [
@@ -1658,6 +1665,7 @@ export const t2iModels = [
   {
     "id": "flux-2-pro",
     "name": "Flux 2 Pro",
+    "replicateId": "black-forest-labs/flux-pro",
     "inputs": {
       "prompt": {
         "examples": [
@@ -8158,14 +8166,17 @@ export const v2vModels = [
 // Image-based: portrait image + audio → talking video
 // Video-based: existing video + audio → lipsync video
 export const lipsyncModels = [
-  // ── Image + Audio → Video ──────────────────────────────────────────────────
+  // ── Image + Audio → Video (Muapi) ──────────────────────────────────────────
   {
     "id": "infinitetalk-image-to-video",
     "name": "Infinite Talk",
     "endpoint": "infinitetalk-image-to-video",
     "family": "infinitetalk",
     "category": "image",
+    "provider": "Muapi",
     "hasPrompt": true,
+    "maxDuration": 60,
+    "replicateId": "zsxkib/sadtalker",
     "description": "Animate a portrait image into a talking video driven by audio.",
     "inputs": {
       "resolution": {
@@ -8183,7 +8194,10 @@ export const lipsyncModels = [
     "endpoint": "wan2.2-speech-to-video",
     "family": "wan",
     "category": "image",
+    "provider": "Muapi",
     "hasPrompt": true,
+    "maxDuration": 60,
+    "replicateId": "zsxkib/sadtalker",
     "description": "Generate a talking portrait video from an image and audio using Wan 2.2.",
     "inputs": {
       "resolution": {
@@ -8201,8 +8215,11 @@ export const lipsyncModels = [
     "endpoint": "ltx-2.3-lipsync",
     "family": "ltx",
     "category": "image",
+    "provider": "Muapi",
     "hasPrompt": true,
     "hasSeed": true,
+    "maxDuration": 20,
+    "replicateId": "zsxkib/sadtalker",
     "description": "High-quality lipsync from portrait image and audio using LTX 2.3.",
     "inputs": {
       "resolution": {
@@ -8220,7 +8237,10 @@ export const lipsyncModels = [
     "endpoint": "ltx-2-19b-lipsync",
     "family": "ltx",
     "category": "image",
+    "provider": "Muapi",
     "hasPrompt": true,
+    "maxDuration": 20,
+    "replicateId": "zsxkib/sadtalker",
     "description": "Lipsync from portrait image and audio using LTX 2 19B model.",
     "inputs": {
       "resolution": {
@@ -8232,14 +8252,58 @@ export const lipsyncModels = [
       }
     }
   },
-  // ── Video + Audio → Video ──────────────────────────────────────────────────
+  // ── Image + Audio → Video (Replicate) ──────────────────────────────────────
+  {
+    "id": "prunaai-p-video-avatar",
+    "name": "P-Video Avatar",
+    "replicateId": "prunaai/p-video-avatar",
+    "family": "prunaai",
+    "category": "image",
+    "provider": "Replicate",
+    "hasPrompt": false,
+    "maxDuration": 60,
+    "description": "Fastest & most affordable talking-head avatar. Portrait image + audio → natural lip-sync video.",
+    "inputs": {
+      "resolution": {
+        "type": "string",
+        "title": "Resolution",
+        "name": "resolution",
+        "enum": ["720p", "1080p"],
+        "default": "720p"
+      }
+    }
+  },
+  {
+    "id": "zsxkib-multitalk",
+    "name": "MultiTalk",
+    "replicateId": "zsxkib/multitalk",
+    "family": "multitalk",
+    "category": "image",
+    "provider": "Replicate",
+    "hasPrompt": true,
+    "maxDuration": 15,
+    "description": "Audio-driven multi-person conversational video. Supports 1-2 people with synchronized lip movements.",
+    "inputs": {
+      "resolution": {
+        "type": "string",
+        "title": "Resolution",
+        "name": "resolution",
+        "enum": ["480p", "720p"],
+        "default": "720p"
+      }
+    }
+  },
+  // ── Video + Audio → Video (Muapi) ──────────────────────────────────────────
   {
     "id": "sync-lipsync",
     "name": "Sync Lipsync",
     "endpoint": "sync-lipsync",
     "family": "lipsync",
     "category": "video",
+    "provider": "Muapi",
     "hasPrompt": false,
+    "maxDuration": 60,
+    "replicateId": "devxpy/wav2lip",
     "description": "Generate realistic lipsync animations from audio using Sync's advanced algorithms."
   },
   {
@@ -8248,7 +8312,10 @@ export const lipsyncModels = [
     "endpoint": "latentsync-video",
     "family": "lipsync",
     "category": "video",
+    "provider": "Muapi",
     "hasPrompt": false,
+    "maxDuration": 30,
+    "replicateId": "devxpy/wav2lip",
     "description": "Video-to-video lipsync using LatentSync for high-quality audio-driven lip animations."
   },
   {
@@ -8257,7 +8324,10 @@ export const lipsyncModels = [
     "endpoint": "creatify-lipsync",
     "family": "lipsync",
     "category": "video",
+    "provider": "Muapi",
     "hasPrompt": false,
+    "maxDuration": 60,
+    "replicateId": "devxpy/wav2lip",
     "description": "Realistic lipsync video optimized for speed, quality, and consistency by Creatify."
   },
   {
@@ -8266,7 +8336,10 @@ export const lipsyncModels = [
     "endpoint": "veed-lipsync",
     "family": "lipsync",
     "category": "video",
+    "provider": "Muapi",
     "hasPrompt": false,
+    "maxDuration": 120,
+    "replicateId": "devxpy/wav2lip",
     "description": "Generate realistic lipsync from any audio using VEED's latest model."
   },
   {
@@ -8275,7 +8348,10 @@ export const lipsyncModels = [
     "endpoint": "infinitetalk-video-to-video",
     "family": "infinitetalk",
     "category": "video",
+    "provider": "Muapi",
     "hasPrompt": true,
+    "maxDuration": 60,
+    "replicateId": "devxpy/wav2lip",
     "description": "Apply audio-driven lipsync to an existing video using Infinite Talk.",
     "inputs": {
       "resolution": {
@@ -8286,6 +8362,29 @@ export const lipsyncModels = [
         "default": "480p"
       }
     }
+  },
+  // ── Video + Audio → Video (Replicate) ──────────────────────────────────────
+  {
+    "id": "heygen-lipsync-precision",
+    "name": "HeyGen Lipsync Precision",
+    "replicateId": "heygen/lipsync-precision",
+    "family": "heygen",
+    "category": "video",
+    "provider": "Replicate",
+    "hasPrompt": false,
+    "maxDuration": 120,
+    "description": "High-accuracy avatar-inference lip-sync. Replace or dub audio on any video at studio quality."
+  },
+  {
+    "id": "sync-lipsync-2-pro",
+    "name": "Sync Lipsync 2 Pro",
+    "replicateId": "sync/lipsync-2-pro",
+    "family": "sync",
+    "category": "video",
+    "provider": "Replicate",
+    "hasPrompt": false,
+    "maxDuration": 120,
+    "description": "Studio-grade lipsync 2 Pro. Works across live-action, animation and AI-generated content up to 4K."
   }
 ];
 
