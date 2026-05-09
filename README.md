@@ -541,6 +541,64 @@ Built with [Muapi.ai](https://muapi.ai) — the unified API for AI image and vid
 **Deep Dive**: For more details on the "AI Influencer" engine, upcoming "Popcorn" storyboarding features, and the future of this project, read the [full technical overview](https://medium.com/@anilmatcha/).
 
 ---
+
+## Fork Additions (Galo25/Open-Generative-AI)
+
+This fork adds multi-provider support, a Settings admin page, and ElevenLabs audio generation.
+
+### Quick Start
+
+**Requirements:** Node.js 18+, npm 9+
+
+```bash
+git clone https://github.com/Galo25/Open-Generative-AI.git
+cd Open-Generative-AI
+npm install
+npm run build:studio
+npm run dev        # http://localhost:3000
+```
+
+### Configuring API Keys
+
+Open **http://localhost:3000/studio/settings** (or click ⚙ Settings in the nav).
+
+| Provider | What it powers | Where to get a key |
+|---|---|---|
+| **Muapi.ai** | All studios (default) | [muapi.ai](https://muapi.ai) |
+| **Replicate** | Lip Sync (SadTalker / Wav2Lip) | [replicate.com/account/api-tokens](https://replicate.com/account/api-tokens) |
+| **ElevenLabs** | Audio generation in Lip Sync | [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys) |
+
+1. Paste your token into the provider card and click **Save**
+2. Click **Test Connection** to verify it works
+3. Use the **Active LipSync Provider** toggle to switch between Muapi and Replicate
+
+### Lip Sync — Model Limits
+
+| Model | Max Audio Length |
+|---|---|
+| LTX 2.3 Lipsync | 20s |
+| LTX 2 19B Lipsync | 20s |
+| Wan 2.2 Speech to Video | 60s |
+| Infinite Talk | 60s |
+| Veed Lipsync | 120s |
+| Sync / Creatify / LatentSync | 30–60s |
+
+### ElevenLabs Audio Generation
+
+In the Lip Sync studio, click **AI AUDIO** next to the audio upload. Type your script, select a voice, click **Generate Audio** — the audio is generated and set automatically.
+
+### Development
+
+```bash
+npm run build:studio   # rebuild after editing packages/studio/src/
+npm run dev            # Next.js dev server
+```
+
+#### Previewing in Claude Code
+
+A `.claude/launch.json` is included so the Claude Code preview MCP can start and screenshot the app without any manual setup. In a Claude Code session, just say **"preview the current version"** — it will start the Next.js dev server on port 3000 and take a live screenshot automatically.
+
+---
 *Looking for a free, uncensored Higgsfield AI, Freepik, Krea, Openart AI alternative? Open Generative AI is an open-source, unrestricted AI image and video generation studio — a Higgsfield AI, Freepik, Krea, Openart AI replacement with no content filters that you can self-host, customize, and extend.*
 
 This project is an independent, experimental, and open-source initiative and is not affiliated with, endorsed by, or associated with Higgsfield Inc., Freepik, Krea AI, OpenArt AI, or any of their respective companies, products, or services. Any references to third-party platforms, models, or technologies are made solely for interoperability, benchmarking, research, or educational purposes. All trademarks, logos, and brand names are the property of their respective owners. If any content in this repository creates confusion or raises concerns, please contact us and we will promptly review and address it.

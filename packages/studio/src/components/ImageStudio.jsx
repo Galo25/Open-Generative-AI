@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { generateImage, generateI2I, uploadFile } from "../muapi.js";
+import { generateImage, generateI2I } from "../providers/router.js";
+import { uploadFile } from "../muapi.js";
 import {
   t2iModels,
   i2iModels,
@@ -1039,7 +1040,7 @@ export default function ImageStudio({
             if (currentQualityField && selectedQuality) {
               genParams[currentQualityField] = selectedQuality;
             }
-            return await generateI2I(apiKey, genParams);
+            return await generateI2I(genParams);
           } else {
             const genParams = {
               model: selectedModelId,
@@ -1049,7 +1050,7 @@ export default function ImageStudio({
             if (currentQualityField && selectedQuality) {
               genParams[currentQualityField] = selectedQuality;
             }
-            return await generateImage(apiKey, genParams);
+            return await generateImage(genParams);
           }
         })
       );
