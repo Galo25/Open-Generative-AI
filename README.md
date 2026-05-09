@@ -582,6 +582,10 @@ npm run build:studio   # rebuild after editing packages/studio/src/
 npm run dev            # Next.js dev server
 ```
 
+#### Previewing in Claude Code
+
+A `.claude/launch.json` is included so the Claude Code preview MCP can start and screenshot the app without any manual setup. In a Claude Code session, just say **"preview the current version"** — it will start the Next.js dev server on port 3000 and take a live screenshot automatically.
+
 ---
 *Looking for a free, uncensored Higgsfield AI, Freepik, Krea, Openart AI alternative? Open Generative AI is an open-source, unrestricted AI image and video generation studio — a Higgsfield AI, Freepik, Krea, Openart AI replacement with no content filters that you can self-host, customize, and extend.*
 
